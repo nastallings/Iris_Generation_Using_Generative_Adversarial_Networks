@@ -91,7 +91,7 @@ class GAN_Model:
         model.add(BatchNormalization(momentum=0.8))
 
         # Final layer
-        model.add(Conv2DTranspose(1, 4, activation='sigmoid', padding='same'))
+        model.add(Convolution2D(1, 4, activation='sigmoid', padding='same'))
         return model
 
     def gan_model(self):
@@ -169,18 +169,28 @@ class GAN_Model:
         noise = noise.reshape(numSamples, self.dimensionalNoise)
         return noise
 
-    def Save_Model(self, modelName, modelWeights):
+    def Save_Models(self, modelName, modelWeights):
         """
         Saves the model to a JSON file
         @:param modelName: the file name for the model
         @:param modelWeights: the file name for the model weights
         """
 
-        model_json = self.model.to_json()
-        with open(modelName, "w") as json_file:
-            json_file.write(model_json)
+        generativeModel_json = self.generativeModel.to_json()
+        discriminatorModel_json = self.discriminatorModel.to_json()
+        GAN_json = self.GAN.to_json()
+
+        with open(modelName + "_generator", "w") as json_file_generator:
+            json_file_generator.write(generativeModel_json)
+        with open(modelName + "_discriminator", "w") as json_file_discriminator:
+            json_file_discriminator.write(discriminatorModel_json)
+        with open(modelName + "_GAN", "w") as json_file_GAN:
+            json_file_GAN.write(GAN_json)
+
         # serialize weights to HDF5
-        self.model.save_weights(modelWeights)
+        self.generativeModel.save_weights(modelWeights + "_generator")
+        self.discriminatorModel.save_weights(modelWeights + "_discriminator")
+        self.GAN.save_weights(modelWeights + "_GAN")
         print("Saved model to disk")
 
     def Load_Model(self, modelName, modelWeights):
@@ -223,7 +233,7 @@ class GAN_Model:
         temp, generatedAccuracy = self.discriminatorModel.evaluate(xGenerated, yGenerated, verbose=0)
 
         # display performance
-        print('Accuracy on Real Samples: %.0f%%, Accuracy on Real Samples: %.0f%%'
+        print('Accuracy on Real Samples: %.0f%%, Accuracy on Generated Samples: %.0f%%'
               % (realAccuracy * 100, generatedAccuracy * 100))
 
         # Save sample of generated image
