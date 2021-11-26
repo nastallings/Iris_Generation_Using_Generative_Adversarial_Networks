@@ -11,9 +11,11 @@ from tensorflow.keras.layers import Reshape
 from tensorflow.keras.layers import Conv2DTranspose
 from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.initializers import RandomNormal
 from tensorflow.keras.models import model_from_json
 import tensorflow as tf
 import tensorflow.keras.backend as tfback
+import matplotlib.pyplot as plt
 
 # Sets up tensorflow GPU
 tf.compat.v1.disable_eager_execution()
@@ -53,11 +55,11 @@ class GAN_Model:
         """
 
         model = Sequential()
-        model.add(Convolution2D(64, (3, 3), strides=(2, 2), padding='same', input_shape=(80, 60, 1)))
-        model.add(LeakyReLU(alpha=0.2))
+        model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', input_shape=(80, 60, 1), activation="relu"))
+        # model.add(LeakyReLU(alpha=0.2))
         model.add(Dropout(0.4))
-        model.add(Convolution2D(64, (3, 3), strides=(2, 2), padding='same'))
-        model.add(LeakyReLU(alpha=0.2))
+        model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', activation="relu"))
+        # model.add(LeakyReLU(alpha=0.2))
         model.add(Dropout(0.4))
         model.add(Flatten())
         model.add(Dense(1, activation='sigmoid'))
@@ -76,22 +78,26 @@ class GAN_Model:
         @:return the generativeModel
         """
 
+        kernelInit = RandomNormal(stddev=0.02)
         model = Sequential()
         # foundation for 20 by 15 image
-        model.add(Dense(480 * 20 * 15, input_dim=self.dimensionalNoise, activation="relu"))
+        model.add(Dense(480 * 20 * 15, input_dim=self.dimensionalNoise, kernel_initializer=kernelInit))
+        model.add(LeakyReLU(alpha=0.2))
         model.add(Reshape((20, 15, 480)))
-        model.add(Dropout(.4))
+        model.add(Dropout(.2))
 
         # up-sample to 40 by 30
-        model.add(Conv2DTranspose(240, 4, strides=(2, 2), padding='same', activation="relu"))
+        model.add(Conv2DTranspose(240, (6, 6), strides=(2, 2), padding='same', kernel_initializer=kernelInit))
+        model.add(LeakyReLU(alpha=0.2))
         model.add(BatchNormalization(momentum=0.8))
 
         # up-sample to 80 by 60
-        model.add(Conv2DTranspose(120, 4, strides=(2, 2), padding='same', activation="relu"))
+        model.add(Conv2DTranspose(120, (6, 6), strides=(2, 2), padding='same', kernel_initializer=kernelInit))
+        model.add(LeakyReLU(alpha=0.2))
         model.add(BatchNormalization(momentum=0.8))
 
         # Final layer
-        model.add(Convolution2D(1, 4, activation='sigmoid', padding='same'))
+        model.add(Convolution2D(1, (9, 9), activation='tanh', padding='same', kernel_initializer=kernelInit))
         return model
 
     def gan_model(self):
@@ -110,38 +116,48 @@ class GAN_Model:
         model.compile(loss='binary_crossentropy', optimizer=optimizer)
         return model
 
-    def train_GAN_model(self, trainingSet, epochs=100, batchSize=32):
+    def train_GAN_model(self, trainingSet, numEpochs=100, batchSize=32):
         """
         This function trains a GAN model and updates the discriminatorModel weights.
         @:param trainingSet: Actual samples of human Iris for training
-        @:param epochs: The number of epochs to run
+        @:param numEpochs: The number of epochs to run
         @:param batchSize: The number for the batch size
         """
 
         batchPerEpoch = int(trainingSet.shape[0] / batchSize)
         halfBatch = int(batchSize / 2)
-
+        realDiscriminatorHist, syntheticDiscriminatorHist, ganHist, realDiscriminatorAcc, syntheticDiscriminatorAcc \
+            = [], [], [], [], []
+        epochs = batchPerEpoch * numEpochs
         for ep in range(epochs):
-            # enumerate batches over the training set
-            for batch in range(batchPerEpoch):
-                # test the discriminatorModel by mixing real and fake samples
-                xReal, yReal = dg.generate_samples(trainingSet, halfBatch)
-                xGenerated, yGenerated = self.create_samples(halfBatch)
-                xData, yData = np.vstack((xReal, xGenerated)), np.vstack((yReal, yGenerated))
-                discriminatorLoss, temp = self.discriminatorModel.train_on_batch(xData, yData)
+            # test the discriminatorModel by mixing real and fake samples
+            xReal, yReal = dg.generate_samples(trainingSet, halfBatch)
+            realDiscriminatorLoss, realDiscriminatorAccuracy = self.discriminatorModel.train_on_batch(xReal, yReal)
+            xGenerated, yGenerated = self.create_samples(halfBatch)
+            syntheticDiscriminatorLoss, syntheticDiscriminatorAccuracy \
+                = self.discriminatorModel.train_on_batch(xGenerated, yGenerated)
 
-                # prepare noise vector for GAN training
-                xGan = self.generate_dimension_noise(batchSize)
-                yGan = np.ones((batchSize, 1))
-                GANLoss = self.GAN.train_on_batch(xGan, yGan)
+            # prepare noise vector for GAN training
+            xGan = self.generate_dimension_noise(batchSize)
+            yGan = np.ones((batchSize, 1))
+            GANLoss = self.GAN.train_on_batch(xGan, yGan)
 
-                # summarize loss on this batch
-                print('epoch:%d, batch: %d/%d, discriminator_loss=%.3f, gan_loss=%.3f'
-                      % (ep + 1, batch + 1, batchPerEpoch, discriminatorLoss, GANLoss))
-            # evaluate the model performance 1/10 of the time
-            if (ep + 1) % int(epochs/10) == 0:
-                self.display_performance(ep, trainingSet)
+            realDiscriminatorHist.append(realDiscriminatorLoss)
+            syntheticDiscriminatorHist.append(syntheticDiscriminatorLoss)
+            ganHist.append(GANLoss)
+            realDiscriminatorAcc.append(realDiscriminatorAccuracy)
+            syntheticDiscriminatorAcc.append(syntheticDiscriminatorAccuracy)
 
+            # summarize loss on this batch
+            print('epoch:%d, real_discriminator_loss=%.3f, synthetic_discriminator_loss=%.3f, gan_loss=%.3f, '
+                  'real_discriminator_accuracy=%.3f, synthetic_discriminator_accuracy=%.3f'
+                  % (ep + 1, realDiscriminatorLoss, syntheticDiscriminatorLoss, GANLoss,
+                     realDiscriminatorAccuracy, syntheticDiscriminatorAccuracy))
+        # evaluate the model performance 1/10 of the time
+        if (ep + 1) % int(epochs/5) == 0:
+            self.display_performance(ep, trainingSet)
+        self.plot_history(realDiscriminatorHist, syntheticDiscriminatorHist,
+                      ganHist, realDiscriminatorAcc, syntheticDiscriminatorAcc)
     def create_samples(self, numSamples):
         """
         This function creates samples from the noise using the generative model.
@@ -180,17 +196,17 @@ class GAN_Model:
         discriminatorModel_json = self.discriminatorModel.to_json()
         GAN_json = self.GAN.to_json()
 
-        with open(modelName + "_generator", "w") as json_file_generator:
+        with open("Saved Models/" + modelName + "_generator", "w") as json_file_generator:
             json_file_generator.write(generativeModel_json)
-        with open(modelName + "_discriminator", "w") as json_file_discriminator:
+        with open("Saved Models/" + modelName + "_discriminator", "w") as json_file_discriminator:
             json_file_discriminator.write(discriminatorModel_json)
-        with open(modelName + "_GAN", "w") as json_file_GAN:
+        with open("Saved Models/" + modelName + "_GAN", "w") as json_file_GAN:
             json_file_GAN.write(GAN_json)
 
         # serialize weights to HDF5
-        self.generativeModel.save_weights(modelWeights + "_generator")
-        self.discriminatorModel.save_weights(modelWeights + "_discriminator")
-        self.GAN.save_weights(modelWeights + "_GAN")
+        self.generativeModel.save_weights("Saved Models/" + modelWeights + "_generator")
+        self.discriminatorModel.save_weights("Saved Models/" + modelWeights + "_discriminator")
+        self.GAN.save_weights("Saved Models/" + modelWeights + "_GAN")
         print("Saved model to disk")
 
     def Load_Model(self, modelName, modelWeights):
@@ -237,9 +253,27 @@ class GAN_Model:
               % (realAccuracy * 100, generatedAccuracy * 100))
 
         # Save sample of generated image
-        plt.imshow(xGenerated[np.random.randint(0, xGenerated.shape[0]), :, :, 0], cmap='gray_r')
+        plt.imshow(xGenerated[np.random.randint(0, xGenerated.shape[0]), :, :, 0], cmap='gray')
         plt.axis('off')
         plt.savefig('generated_iris_e%03d.png' % (epoch + 1))
         plt.close()
 
+        # Save model
+        self.Save_Models("Generative_Adversarial_Network_Model_Epoch_" + str(epoch),
+                         "Generative_Adversarial_Network_Weights_Epoch_" + str(epoch))
 
+    def plot_history(self, d1_hist, d2_hist, g_hist, a1_hist, a2_hist):
+        # plot loss
+        plt.subplot(2, 1, 1)
+        plt.plot(d1_hist, label='d-real')
+        plt.plot(d2_hist, label='d-fake')
+        plt.plot(g_hist, label='gen')
+        plt.legend()
+        # plot discriminator accuracy
+        plt.subplot(2, 1, 2)
+        plt.plot(a1_hist, label='acc-real')
+        plt.plot(a2_hist, label='acc-fake')
+        plt.legend()
+        # save plot to file
+        plt.savefig('plot_line_plot_loss.png')
+        plt.close()

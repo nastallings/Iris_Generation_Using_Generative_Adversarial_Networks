@@ -3,8 +3,8 @@ import Data_Generation as dg
 
 # Parameters
 numEpochs = 1000
-batchSize = 32
-randomNoise = 200
+batchSize = 46
+randomNoise = 100
 modelName = "Generative_Adversarial_Network_Model"
 modelWeights = "Generative_Adversarial_Network_Weights"
 
@@ -16,4 +16,3 @@ trainingSet = dg.load_data()
 
 # Train the GAN
 GAN.train_GAN_model(trainingSet, numEpochs, batchSize)
-GAN.Save_Models(modelName, modelWeights)
