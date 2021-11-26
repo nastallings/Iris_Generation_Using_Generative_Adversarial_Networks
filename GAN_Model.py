@@ -6,12 +6,10 @@ from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Convolution2D
-from tensorflow.keras.layers import LeakyReLU
 from tensorflow.keras.layers import Reshape
 from tensorflow.keras.layers import Conv2DTranspose
 from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.initializers import RandomNormal
 from tensorflow.keras.models import model_from_json
 import tensorflow as tf
 import tensorflow.keras.backend as tfback
@@ -56,10 +54,8 @@ class GAN_Model:
 
         model = Sequential()
         model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', input_shape=(80, 60, 1), activation="relu"))
-        # model.add(LeakyReLU(alpha=0.2))
         model.add(Dropout(0.4))
         model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', activation="relu"))
-        # model.add(LeakyReLU(alpha=0.2))
         model.add(Dropout(0.4))
         model.add(Flatten())
         model.add(Dense(1, activation='sigmoid'))
@@ -78,26 +74,22 @@ class GAN_Model:
         @:return the generativeModel
         """
 
-        kernelInit = RandomNormal(stddev=0.02)
         model = Sequential()
         # foundation for 20 by 15 image
-        model.add(Dense(480 * 20 * 15, input_dim=self.dimensionalNoise, kernel_initializer=kernelInit))
-        model.add(LeakyReLU(alpha=0.2))
+        model.add(Dense(480 * 20 * 15, input_dim=self.dimensionalNoise, activation="relu"))
         model.add(Reshape((20, 15, 480)))
         model.add(Dropout(.2))
 
         # up-sample to 40 by 30
-        model.add(Conv2DTranspose(240, (6, 6), strides=(2, 2), padding='same', kernel_initializer=kernelInit))
-        model.add(LeakyReLU(alpha=0.2))
+        model.add(Conv2DTranspose(240, (6, 6), strides=(2, 2), padding='same', activation="relu"))
         model.add(BatchNormalization(momentum=0.8))
 
         # up-sample to 80 by 60
-        model.add(Conv2DTranspose(120, (6, 6), strides=(2, 2), padding='same', kernel_initializer=kernelInit))
-        model.add(LeakyReLU(alpha=0.2))
+        model.add(Conv2DTranspose(120, (6, 6), strides=(2, 2), padding='same', activation="relu"))
         model.add(BatchNormalization(momentum=0.8))
 
         # Final layer
-        model.add(Convolution2D(1, (9, 9), activation='tanh', padding='same', kernel_initializer=kernelInit))
+        model.add(Convolution2D(1, (9, 9), activation='sigmoid', padding='same'))
         return model
 
     def gan_model(self):
@@ -153,9 +145,9 @@ class GAN_Model:
                   'real_discriminator_accuracy=%.3f, synthetic_discriminator_accuracy=%.3f'
                   % (ep + 1, realDiscriminatorLoss, syntheticDiscriminatorLoss, GANLoss,
                      realDiscriminatorAccuracy, syntheticDiscriminatorAccuracy))
-        # evaluate the model performance 1/10 of the time
-        if (ep + 1) % int(epochs/5) == 0:
-            self.display_performance(ep, trainingSet)
+            # evaluate the model performance 1/5 of the time
+            if (ep + 1) % int(epochs/5) == 0:
+                self.display_performance(ep, trainingSet)
         self.plot_history(realDiscriminatorHist, syntheticDiscriminatorHist,
                       ganHist, realDiscriminatorAcc, syntheticDiscriminatorAcc)
     def create_samples(self, numSamples):

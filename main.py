@@ -3,7 +3,7 @@ import Data_Generation as dg
 
 # Parameters
 numEpochs = 1000
-batchSize = 46
+batchSize = 32
 randomNoise = 100
 modelName = "Generative_Adversarial_Network_Model"
 modelWeights = "Generative_Adversarial_Network_Weights"
