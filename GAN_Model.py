@@ -53,7 +53,7 @@ class GAN_Model:
         """
 
         model = Sequential()
-        model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', input_shape=(80, 60, 1), activation="relu"))
+        model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', input_shape=(160, 120, 1), activation="relu"))
         model.add(Dropout(0.4))
         model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', activation="relu"))
         model.add(Dropout(0.4))
@@ -81,15 +81,19 @@ class GAN_Model:
         model.add(Dropout(.2))
 
         # up-sample to 40 by 30
-        model.add(Conv2DTranspose(240, (6, 6), strides=(2, 2), padding='same', activation="relu"))
+        model.add(Conv2DTranspose(240, (3, 3), strides=(2, 2), padding='same', activation="relu"))
         model.add(BatchNormalization(momentum=0.8))
 
         # up-sample to 80 by 60
-        model.add(Conv2DTranspose(120, (6, 6), strides=(2, 2), padding='same', activation="relu"))
+        model.add(Conv2DTranspose(120, (3, 3), strides=(2, 2), padding='same', activation="relu"))
+        model.add(BatchNormalization(momentum=0.8))
+
+        # up-sample to 160 by 120
+        model.add(Conv2DTranspose(60, (1, 1), strides=(2, 2), padding='same', activation="relu"))
         model.add(BatchNormalization(momentum=0.8))
 
         # Final layer
-        model.add(Convolution2D(1, (9, 9), activation='sigmoid', padding='same'))
+        model.add(Convolution2D(1, (7, 7), activation='sigmoid', padding='same'))
         return model
 
     def gan_model(self):
@@ -116,16 +120,13 @@ class GAN_Model:
         @:param batchSize: The number for the batch size
         """
 
-        batchPerEpoch = int(trainingSet.shape[0] / batchSize)
-        halfBatch = int(batchSize / 2)
         realDiscriminatorHist, syntheticDiscriminatorHist, ganHist, realDiscriminatorAcc, syntheticDiscriminatorAcc \
             = [], [], [], [], []
-        epochs = batchPerEpoch * numEpochs
-        for ep in range(epochs):
+        for ep in range(numEpochs):
             # test the discriminatorModel by mixing real and fake samples
-            xReal, yReal = dg.generate_samples(trainingSet, halfBatch)
+            xReal, yReal = dg.generate_samples(trainingSet, batchSize)
             realDiscriminatorLoss, realDiscriminatorAccuracy = self.discriminatorModel.train_on_batch(xReal, yReal)
-            xGenerated, yGenerated = self.create_samples(halfBatch)
+            xGenerated, yGenerated = self.create_samples(batchSize)
             syntheticDiscriminatorLoss, syntheticDiscriminatorAccuracy \
                 = self.discriminatorModel.train_on_batch(xGenerated, yGenerated)
 
@@ -145,11 +146,17 @@ class GAN_Model:
                   'real_discriminator_accuracy=%.3f, synthetic_discriminator_accuracy=%.3f'
                   % (ep + 1, realDiscriminatorLoss, syntheticDiscriminatorLoss, GANLoss,
                      realDiscriminatorAccuracy, syntheticDiscriminatorAccuracy))
-            # evaluate the model performance 1/5 of the time
-            if (ep + 1) % int(epochs/5) == 0:
+            # evaluate the model performance
+            if (ep + 1) % 1000 == 0:
                 self.display_performance(ep, trainingSet)
+            if (ep + 1) % 10000 == 0:
+                # Save model
+                self.Save_Models("Generative_Adversarial_Network_Model_Epoch_" + str(ep+1),
+                                 "Generative_Adversarial_Network_Weights_Epoch_" + str(ep+1))
+
         self.plot_history(realDiscriminatorHist, syntheticDiscriminatorHist,
-                      ganHist, realDiscriminatorAcc, syntheticDiscriminatorAcc)
+                          ganHist, realDiscriminatorAcc, syntheticDiscriminatorAcc)
+
     def create_samples(self, numSamples):
         """
         This function creates samples from the noise using the generative model.
@@ -223,7 +230,6 @@ class GAN_Model:
         except:
             return 0
 
-
     def display_performance(self, epoch, trainingSet, numSamples=100):
         """
         Displays the performance of the GAN model. Saves images of the generated irises
@@ -247,12 +253,8 @@ class GAN_Model:
         # Save sample of generated image
         plt.imshow(xGenerated[np.random.randint(0, xGenerated.shape[0]), :, :, 0], cmap='gray')
         plt.axis('off')
-        plt.savefig('generated_iris_e%03d.png' % (epoch + 1))
+        plt.savefig('generated_iris_%03d.png' % (epoch + 1))
         plt.close()
-
-        # Save model
-        self.Save_Models("Generative_Adversarial_Network_Model_Epoch_" + str(epoch),
-                         "Generative_Adversarial_Network_Weights_Epoch_" + str(epoch))
 
     def plot_history(self, d1_hist, d2_hist, g_hist, a1_hist, a2_hist):
         # plot loss
