@@ -306,7 +306,7 @@ class GAN_Model:
         plt.ylabel("Accuracy")
         plt.xlabel("Iteration")
         # save plot to file
-        plt.savefig('plot_line_plot_loss.png')
+        plt.savefig('Performance-over-time-plot.png')
         plt.close()
 
     def run_test(self):
