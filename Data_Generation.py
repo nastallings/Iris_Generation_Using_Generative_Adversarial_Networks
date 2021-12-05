@@ -11,8 +11,10 @@ def load_data():
     data = []
     for filename in os.listdir("Iris Data"):
         image = cv2.imread("Iris Data/" + str(filename), cv2.IMREAD_GRAYSCALE)
-        image = cv2.resize(image, (60, 80), interpolation=cv2.INTER_AREA)
+        image = cv2.resize(image, (160, 120), interpolation=cv2.INTER_AREA)
         data.append(image)
+        # cv2.imshow("Eye Sample", image)
+        # cv2.waitKey(0)
     xData = np.array(data)
     xData = np.expand_dims(xData, axis=-1)
     xData = xData.astype('float32')

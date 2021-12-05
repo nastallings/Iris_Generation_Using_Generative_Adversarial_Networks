@@ -14,6 +14,9 @@ from tensorflow.keras.models import model_from_json
 import tensorflow as tf
 import tensorflow.keras.backend as tfback
 import matplotlib.pyplot as plt
+import random
+import os
+import cv2
 
 # Sets up tensorflow GPU
 tf.compat.v1.disable_eager_execution()
@@ -53,7 +56,7 @@ class GAN_Model:
         """
 
         model = Sequential()
-        model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', input_shape=(160, 120, 1), activation="relu"))
+        model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', input_shape=(120, 160, 1), activation="relu"))
         model.add(Dropout(0.4))
         model.add(Convolution2D(64, (8, 8), strides=(2, 2), padding='same', activation="relu"))
         model.add(Dropout(0.4))
@@ -75,25 +78,25 @@ class GAN_Model:
         """
 
         model = Sequential()
-        # foundation for 20 by 15 image
-        model.add(Dense(480 * 20 * 15, input_dim=self.dimensionalNoise, activation="relu"))
-        model.add(Reshape((20, 15, 480)))
+        # foundation for 15 by 20 image
+        model.add(Dense(256 * 20 * 15, input_dim=self.dimensionalNoise, activation="relu"))
+        model.add(Reshape((15, 20, 256)))
         model.add(Dropout(.2))
 
-        # up-sample to 40 by 30
-        model.add(Conv2DTranspose(240, (3, 3), strides=(2, 2), padding='same', activation="relu"))
+        # up-sample to 30 by 40
+        model.add(Conv2DTranspose(128, (5, 5), strides=(2, 2), padding='same', activation="relu"))
         model.add(BatchNormalization(momentum=0.8))
 
-        # up-sample to 80 by 60
-        model.add(Conv2DTranspose(120, (3, 3), strides=(2, 2), padding='same', activation="relu"))
+        # up-sample to 60 by 80
+        model.add(Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same', activation="relu"))
         model.add(BatchNormalization(momentum=0.8))
 
-        # up-sample to 160 by 120
-        model.add(Conv2DTranspose(60, (1, 1), strides=(2, 2), padding='same', activation="relu"))
+        # up-sample to 120 by 160
+        model.add(Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same', activation="relu"))
         model.add(BatchNormalization(momentum=0.8))
 
         # Final layer
-        model.add(Convolution2D(1, (7, 7), activation='sigmoid', padding='same'))
+        model.add(Convolution2D(1, (1, 1), activation='sigmoid', padding='same'))
         return model
 
     def gan_model(self):
@@ -208,23 +211,45 @@ class GAN_Model:
         self.GAN.save_weights("Saved Models/" + modelWeights + "_GAN")
         print("Saved model to disk")
 
-    def Load_Model(self, modelName, modelWeights):
+    def Load_Model(self):
         """
         Loads the model from a JSON file
-        @:param modelName: the file name for the model
-        @:param modelWeights: the file name for the model weights
         """
 
         try:
-            json_file = open(modelName, 'r')
-            loaded_model_json = json_file.read()
-            json_file.close()
-            loaded_model = model_from_json(loaded_model_json)
+            # Load Discriminator
+            disc_json_file = open(
+                "Saved Models/Generative_Adversarial_Network_Model_discriminator", 'r')
+            loaded_disc_model_json = disc_json_file.read()
+            disc_json_file.close()
+            loaded_model_disc = model_from_json(loaded_disc_model_json)
             # load weights into new model
-            loaded_model.load_weights(modelWeights)
-            loaded_model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+            loaded_model_disc.load_weights("Saved Models/Generative_Adversarial_Network_Weights_discriminator")
+            optimizer = Adam(lr=0.0002, beta_1=0.5)
+            loaded_model_disc.compile(loss='binary_crossentropy', optimizer=optimizer)
+            self.discriminatorModel = loaded_model_disc
 
-            self.model = loaded_model
+            # Load Generator
+            gen_json_file = open(
+                "Saved Models/Generative_Adversarial_Network_Model_generator", 'r')
+            loaded_gen_model_json = gen_json_file.read()
+            gen_json_file.close()
+            loaded_model_gen = model_from_json(loaded_gen_model_json)
+            # load weights into new model
+            loaded_model_gen.load_weights("Saved Models/Generative_Adversarial_Network_Weights_generator")
+            self.generativeModel = loaded_model_gen
+
+            # Load GAN
+            gan_json_file = open("Saved Models/Generative_Adversarial_Network_Model_GAN", 'r')
+            loaded_gan_model_json = gan_json_file.read()
+            gan_json_file.close()
+            loaded_model_gan = model_from_json(loaded_gan_model_json)
+            # load weights into new model
+            loaded_model_gan.load_weights("Saved Models/Generative_Adversarial_Network_Weights_GAN")
+            optimizer = Adam(lr=0.0002, beta_1=0.5)
+            loaded_model_gan.compile(loss='binary_crossentropy', optimizer=optimizer)
+            self.GAN = loaded_model_gen
+
             print("Loaded model from disk")
             return 1
         except:
@@ -251,23 +276,83 @@ class GAN_Model:
               % (realAccuracy * 100, generatedAccuracy * 100))
 
         # Save sample of generated image
-        plt.imshow(xGenerated[np.random.randint(0, xGenerated.shape[0]), :, :, 0], cmap='gray')
-        plt.axis('off')
-        plt.savefig('generated_iris_%03d.png' % (epoch + 1))
+        plt.imsave('generated_iris_%03d.png' % (epoch + 1), xGenerated[np.random.randint(0, xGenerated.shape[0]), :, :, 0], cmap="gray")
         plt.close()
 
-    def plot_history(self, d1_hist, d2_hist, g_hist, a1_hist, a2_hist):
+    def plot_history(self, real_d_hist, fake_2_hist, g_hist, r_a_hist, f_a_hist):
+        """
+        Plots the history of the model
+        @:param real_d_hist: Discriminator history on real data
+        @:param fake_2_hist: Discriminator history on fake data
+        @:param g_hist: the GAN history
+        @:param r_a_hist: Discriminator accuracy on real data
+        @:param f_a_hist: Discriminator accuracy on fake data
+        """
+
         # plot loss
         plt.subplot(2, 1, 1)
-        plt.plot(d1_hist, label='d-real')
-        plt.plot(d2_hist, label='d-fake')
+        plt.plot(real_d_hist, label='d-real')
+        plt.plot(fake_2_hist, label='d-fake')
         plt.plot(g_hist, label='gen')
         plt.legend()
+        plt.ylabel("Loss")
+        plt.xlabel("Iteration")
+
         # plot discriminator accuracy
         plt.subplot(2, 1, 2)
-        plt.plot(a1_hist, label='acc-real')
-        plt.plot(a2_hist, label='acc-fake')
+        plt.plot(r_a_hist, label='acc-real')
+        plt.plot(f_a_hist, label='acc-fake')
         plt.legend()
+        plt.ylabel("Accuracy")
+        plt.xlabel("Iteration")
         # save plot to file
         plt.savefig('plot_line_plot_loss.png')
         plt.close()
+
+    def run_test(self):
+        """
+        Runs the test used on humans
+        """
+
+        data = []
+        for index in range(10):
+            filename = random.choice(os.listdir("Iris Data"))
+            image = cv2.imread("Iris Data/" + str(filename), cv2.IMREAD_GRAYSCALE)
+            image = cv2.resize(image, (160, 120), interpolation=cv2.INTER_AREA)
+            data.append(image)
+        self.Load_Model()
+        xGenerated, yGenerated = self.create_samples(10)
+        for image in xGenerated:
+            data.append(image[:, :, 0])
+
+        y = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        x = np.array(data)
+        y = np.array(y)
+
+        indices = np.arange(x.shape[0])
+        np.random.shuffle(indices)
+
+        x = x[indices]
+        y = y[indices]
+
+        for sample in x:
+            plt.imshow(sample, cmap="gray")
+            plt.show()
+
+        print(y)
+
+    def generate_dataset(self, numSamples):
+        """
+        Generates the dataset of synthetic irises
+        @:param numSamples: The number of samples to create for the dataset
+        """
+        self.Load_Model()
+        xGenerated, yGenerated = self.create_samples(numSamples)
+        index = 0
+        if not os.path.isdir("Synthetic Iris Dataset"):
+            os.mkdir("Synthetic Iris Dataset")
+
+        for image in xGenerated:
+            # Save sample of generated image
+            plt.imsave('Synthetic Iris Dataset/generated_iris_%03d.png' % index, image[:, :, 0], cmap="gray")
+            index += 1
